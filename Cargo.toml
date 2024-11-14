@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 stylus-sdk = { version = "0.6.0", default-features = false }
+alloy-primitives = { version = "=0.7.6", default-features = false }
+alloy-sol-types = { version = "=0.7.6", default-features = false }
 
 [dev-dependencies]
 motsu = "0.2.0"

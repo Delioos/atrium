@@ -3,32 +3,211 @@
 extern crate alloc;
 
 /// Import items from the SDK. The prelude contains common traits and macros.
-use stylus_sdk::{alloy_primitives::U256, prelude::*, storage::StorageU256};
+use stylus_sdk::{
+    evm,
+    prelude::entrypoint,
+    stylus_proc::{public, sol_storage, SolidityError},
+};
 
-/// The storage macro allows this struct to be used in persistent
-/// storage. It accepts fields that implement the StorageType trait. Built-in
-/// storage types for Solidity ABI primitives are found under
-/// stylus_sdk::storage.
-#[storage]
-/// The entrypoint macro defines where Stylus execution begins. External methods
-/// are exposed by annotating an impl for this struct with #[external] as seen
-/// below.
-#[entrypoint]
-pub struct Counter {
-    number: StorageU256,
+use alloy_primitives::{Address, U256};
+use alloy_sol_types::sol;
+
+/// The currency data type.
+pub type Currency = Address;
+
+sol! {
+    /// Emitted when the amount of input tokens for an exact-output swap
+    /// is calculated.
+    #[allow(missing_docs)]
+    event AmountInCalculated(
+        uint256 amount_out,
+        address input,
+        address output,
+        bool zero_for_one
+    );
+
+    /// Emitted when the amount of output tokens for an exact-input swap
+    /// is calculated.
+    #[allow(missing_docs)]
+    event AmountOutCalculated(
+        uint256 amount_in,
+        address input,
+        address output,
+        bool zero_for_one
+    );
 }
 
-/// Declare that [`Counter`] is a contract with the following external methods.
+sol! {
+    /// Indicates a custom error.
+    #[derive(Debug)]
+    #[allow(missing_docs)]
+    error CurveCustomError();
+}
+
+#[derive(SolidityError, Debug)]
+pub enum Error {
+    /// Indicates a custom error.
+    CustomError(CurveCustomError),
+}
+
+sol_storage! {
+    #[entrypoint]
+    struct UniswapCurve { }
+}
+
+pub trait ICurve {
+    /// Returns the amount of input tokens for an exact-output swap.
+    ///
+    /// # Arguments
+    ///
+    /// * `&mut self` - Write access to the contract's state.
+    /// * `amount_out` the amount of output tokens the user expects to receive.
+    /// * `input` - The input token.
+    /// * `output` - The output token.
+    /// * `zero_for_one` - True if the input token is token0.
+    ///
+    /// # Errors
+    ///
+    /// May return an [`Error`].
+    ///
+    /// # Events
+    ///
+    /// May emit any event.
+    fn get_amount_in_for_exact_output(
+        &mut self,
+        amount_out: U256,
+        input: Currency,
+        output: Currency,
+        zero_for_one: bool,
+    ) -> Result<U256, Error>;
+
+    /// Returns the amount of output tokens for an exact-input swap.
+    ///
+    /// # Arguments
+    ///
+    /// * `&mut self` - Write access to the contract's state.
+    /// * `amount_in` - The amount of input tokens.
+    /// * `input` - The input token.
+    /// * `output` - The output token.
+    /// * `zero_for_one` - True if the input token is `token_0`.
+    ///
+    /// # Errors
+    ///
+    /// May return an [`Error`].
+    ///
+    /// # Events
+    ///
+    /// May emit any event.
+    fn get_amount_out_from_exact_input(
+        &mut self,
+        amount_in: U256,
+        input: Currency,
+        output: Currency,
+        zero_for_one: bool,
+    ) -> Result<U256, Error>;
+}
+
+/// Declare that [`UniswapCurve`] is a contract
+/// with the following external methods.
 #[public]
-impl Counter {
-    /// Gets the number from storage.
-    pub fn number(&self) -> U256 {
-        self.number.get()
+impl ICurve for UniswapCurve {
+    fn get_amount_in_for_exact_output(
+        &mut self,
+        amount_out: U256,
+        input: Currency,
+        output: Currency,
+        zero_for_one: bool,
+    ) -> Result<U256, Error> {
+        let amount_in = self.calculate_amount_in(amount_out, input, output, zero_for_one)?;
+
+        evm::log(AmountInCalculated {
+            amount_out,
+            input,
+            output,
+            zero_for_one,
+        });
+
+        Ok(amount_in)
     }
 
-    /// Sets a number in storage to a user-specified value.
-    pub fn set_number(&mut self, new_number: U256) {
-        self.number.set(new_number);
+    fn get_amount_out_from_exact_input(
+        &mut self,
+        amount_in: U256,
+        input: Currency,
+        output: Currency,
+        zero_for_one: bool,
+    ) -> Result<U256, Error> {
+        let amount_out = self.calculate_amount_out(amount_in, input, output, zero_for_one)?;
+
+        evm::log(AmountOutCalculated {
+            amount_in,
+            input,
+            output,
+            zero_for_one,
+        });
+
+        Ok(amount_out)
+    }
+}
+
+impl UniswapCurve {
+    /// Calculates the amount of input tokens for an exact-output swap.
+    ///
+    /// # Arguments
+    ///
+    /// * `&self` - Read access to the contract's state.
+    /// * `amount_out` the amount of output tokens the user expects to receive.
+    /// * `input` - The input token.
+    /// * `output` - The output token.
+    /// * `zero_for_one` - True if the input token is token0.
+    ///
+    /// # Errors
+    ///
+    /// May return an [`Error`].
+    fn calculate_amount_in(
+        &self,
+        amount_out: U256,
+        _input: Currency,
+        _output: Currency,
+        _zero_for_one: bool,
+    ) -> Result<U256, Error> {
+        // in constant-sum curve, tokens trade exactly 1:1
+        let amount_in = amount_out;
+
+        /*
+         * Implement your swap curve here.
+         */
+
+        Ok(amount_in)
+    }
+
+    /// Returns the amount of output tokens for an exact-input swap.
+    ///
+    /// # Arguments
+    ///
+    /// * `&mut self` - Write access to the contract's state.
+    /// * `amount_in` - The amount of input tokens.
+    /// * `input` - The input token.
+    /// * `output` - The output token.
+    /// * `zero_for_one` - True if the input token is `token_0`.
+    ///
+    /// # Errors
+    ///
+    /// May return an [`Error`].
+    fn calculate_amount_out(
+        &self,
+        amount_in: U256,
+        _input: Currency,
+        _output: Currency,
+        _zero_for_one: bool,
+    ) -> Result<U256, Error> {
+        let amount_out = amount_in;
+
+        /*
+         * Implement your swap curve here.
+         */
+
+        Ok(amount_out)
     }
 }
 
@@ -36,17 +215,53 @@ impl Counter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_primitives::{address, uint};
 
-    #[motsu::test]
-    fn it_gets_number(contract: Counter) {
-        let number = contract.number();
-        assert_eq!(U256::ZERO, number);
+    const CURRENCY_1: Address = address!("A11CEacF9aa32246d767FCCD72e02d6bCbcC375d");
+    const CURRENCY_2: Address = address!("B0B0cB49ec2e96DF5F5fFB081acaE66A2cBBc2e2");
+
+    #[test]
+    fn sample_test() {
+        assert_eq!(4, 2 + 2);
     }
 
     #[motsu::test]
-    fn it_sets_number(contract: Counter) {
-        contract.set_number(U256::from(5));
-        let number = contract.number();
-        assert_eq!(U256::from(5), number);
+    fn calculates_amount_in(contract: UniswapCurve) {
+        let amount_out = uint!(1_U256);
+        let expected_amount_in = amount_out; // 1:1 swap
+        let amount_in = contract
+            .calculate_amount_in(amount_out, CURRENCY_1, CURRENCY_2, true)
+            .expect("should calculate `amount_in`");
+        assert_eq!(expected_amount_in, amount_in);
+    }
+
+    #[motsu::test]
+    fn calculates_amount_out(contract: UniswapCurve) {
+        let amount_in = uint!(2_U256);
+        let expected_amount_out = amount_in; // 1:1 swap
+        let amount_out = contract
+            .calculate_amount_out(amount_in, CURRENCY_1, CURRENCY_2, true)
+            .expect("should calculate `amount_out`");
+        assert_eq!(expected_amount_out, amount_out);
+    }
+
+    #[motsu::test]
+    fn returns_amount_in_for_exact_output(contract: UniswapCurve) {
+        let amount_out = uint!(1_U256);
+        let expected_amount_in = amount_out; // 1:1 swap
+        let amount_in = contract
+            .get_amount_in_for_exact_output(amount_out, CURRENCY_1, CURRENCY_2, true)
+            .expect("should calculate `amount_in`");
+        assert_eq!(expected_amount_in, amount_in);
+    }
+
+    #[motsu::test]
+    fn returns_amount_out_from_exact_input(contract: UniswapCurve) {
+        let amount_in = uint!(2_U256);
+        let expected_amount_out = amount_in; // 1:1 swap
+        let amount_out = contract
+            .get_amount_out_from_exact_input(amount_in, CURRENCY_1, CURRENCY_2, true)
+            .expect("should calculate `amount_out`");
+        assert_eq!(expected_amount_out, amount_out);
     }
 }
