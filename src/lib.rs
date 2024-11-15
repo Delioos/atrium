@@ -55,6 +55,9 @@ sol_storage! {
     struct UniswapCurve { }
 }
 
+/// Interface of an [`UniswapCurve`] contract.
+///
+/// NOTE: The contract's interface can be modified in any way.
 pub trait ICurve {
     /// Returns the amount of input tokens for an exact-output swap.
     ///
@@ -118,8 +121,10 @@ impl ICurve for UniswapCurve {
         output: Currency,
         zero_for_one: bool,
     ) -> Result<U256, Error> {
+        // Calculate `amount_in` based on swap params.
         let amount_in = self.calculate_amount_in(amount_out, input, output, zero_for_one)?;
 
+        // Emit an event if needed.
         evm::log(AmountInCalculated {
             amount_out,
             input,
@@ -137,8 +142,10 @@ impl ICurve for UniswapCurve {
         output: Currency,
         zero_for_one: bool,
     ) -> Result<U256, Error> {
+        // Calculate `amount_out` based on swap params.
         let amount_out = self.calculate_amount_out(amount_in, input, output, zero_for_one)?;
 
+        // Emit an event if needed.
         evm::log(AmountOutCalculated {
             amount_in,
             input,
@@ -171,12 +178,11 @@ impl UniswapCurve {
         _output: Currency,
         _zero_for_one: bool,
     ) -> Result<U256, Error> {
-        // in constant-sum curve, tokens trade exactly 1:1
+        // This is an example of a constant-sum swap curve,
+        // tokens are traded exactly 1:1.
+        //
+        // You can implement any swap curve.
         let amount_in = amount_out;
-
-        /*
-         * Implement your swap curve here.
-         */
 
         Ok(amount_in)
     }
@@ -201,11 +207,11 @@ impl UniswapCurve {
         _output: Currency,
         _zero_for_one: bool,
     ) -> Result<U256, Error> {
+        // This is an example of a constant-sum swap curve,
+        // tokens are traded exactly 1:1.
+        //
+        // You can implement any swap curve.
         let amount_out = amount_in;
-
-        /*
-         * Implement your swap curve here.
-         */
 
         Ok(amount_out)
     }

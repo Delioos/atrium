@@ -1,6 +1,19 @@
-# Stylus Uniswap Custom Curve Calculation
+# Uniswap Custom Swap Curve
 
-The repository contains a simple Stylus Contract written in Rust to be used as a custom curve calculation in Uniswap Hooks.
+### **A template for writing Uniswap Custom Swap Curves in Stylus**
+
+[`Use this Template`](https://github.com/OpenZeppelin/uniswap-stylus-curve-template/generate)
+
+1. The example curve [lib.rs](src/lib.rs) demonstrates a constant-sum swap curve,
+in which tokens are traded exactly 1:1.
+
+> [!TIP]
+> You can modify `ICurve` trait based on your needs, or provide your custom algorithm
+> for a swap curve calculation.
+
+> [!CAUTION]
+> If anything changes in the contract's interface, make sure to update your
+> Solidity contract with Uniswap hooks to use the new Solidity ABI Interface of this contract.
 
 ## Getting started
 
@@ -47,6 +60,7 @@ Instructions to setup a local dev node can be found [here](https://docs.arbitrum
 ## Solidity Interface
 
 This is the current Solidity ABI Interface for the contract
+
 ```solidity
 interface IUniswapCurve {
     function getAmountInForExactOutput(uint256 amount_out, address input, address output, bool zero_for_one) external returns (uint256);
