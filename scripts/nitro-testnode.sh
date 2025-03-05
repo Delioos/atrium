@@ -51,7 +51,7 @@ then
   git clone --recurse-submodules https://github.com/OffchainLabs/nitro-testnode.git
   cd ./nitro-testnode || exit
   git pull origin release --recurse-submodules
-  git checkout e28b14472a7d46c42ff2be14f68ee08e2cbdad0f || exit
+  git checkout e189155bdcdb5deb1ec6d2df7b73a7d2878943a3 || exit
 
   ./test-node.bash --no-run --init || exit
 fi

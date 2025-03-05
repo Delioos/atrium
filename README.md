@@ -10,7 +10,7 @@
 [`Use this Template`](https://github.com/OpenZeppelin/uniswap-stylus-curve-template/generate)
 
 1. The example curve [lib.rs](src/lib.rs) demonstrates a constant-sum swap curve,
-in which tokens are traded exactly 1:1.
+   in which tokens are traded exactly 1:1.
 
 > [!TIP]
 > You can modify `ICurve` trait based on your needs, or provide your custom algorithm
@@ -31,7 +31,7 @@ You'll also need [Foundry](https://github.com/foundry-rs/foundry) to interact wi
 You can use [cargo stylus](https://github.com/OffchainLabs/cargo-stylus) to check that your contract is compatible with Stylus by running
 
 ```shell
-cargo stylus check
+cargo stylus check -e=https://sepolia-rollup.arbitrum.io/rpc
 ```
 
 With the following command you can deploy it to an Arbitrum chain
@@ -41,6 +41,7 @@ cargo stylus deploy --private-key $PRIVATE_KEY -e $RPC_URL --no-verify
 ```
 
 For example
+
 ```shell
 cargo stylus deploy --private-key=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 -e=http://localhost:8547 --no-verify
 ```
@@ -74,11 +75,13 @@ Alternatively, you can use the bash script available [nitro-testnode.sh](/script
 ```
 
 If you need to have some testnet tokens, you can use this script
+
 ```shell
 ./nitro-testnode/test-node.bash script send-l2 --to address_<address> --ethamount <amount>
 ```
 
 For example
+
 ```shell
 ./nitro-testnode/test-node.bash script send-l2 --to address_0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --ethamount 5
 ```

@@ -2,15 +2,11 @@
 #![cfg_attr(all(not(feature = "std"), not(feature = "export-abi")), no_main)]
 extern crate alloc;
 
-/// Import items from the SDK. The prelude contains common traits and macros.
-use stylus_sdk::{
-    evm,
-    prelude::entrypoint,
-    stylus_proc::{public, sol_storage, SolidityError},
-};
-
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::sol;
+/// Import items from the SDK. The prelude contains common traits and
+/// macros.
+use stylus_sdk::prelude::*;
 
 /// The currency data type.
 pub type Currency = Address;
@@ -49,11 +45,9 @@ pub enum Error {
     /// Indicates a custom error.
     CustomError(CurveCustomError),
 }
-
-sol_storage! {
-    #[entrypoint]
-    struct UniswapCurve { }
-}
+#[storage]
+#[entrypoint]
+struct UniswapCurve {}
 
 /// Interface of an [`UniswapCurve`] contract.
 ///
@@ -122,15 +116,14 @@ impl ICurve for UniswapCurve {
         zero_for_one: bool,
     ) -> Result<U256, Error> {
         // Calculate `amount_in` based on swap params.
-        let amount_in = self.calculate_amount_in(amount_out, input, output, zero_for_one)?;
+        let amount_in =
+            self.calculate_amount_in(amount_out, input, output, zero_for_one)?;
 
         // Emit an event if needed.
-        evm::log(AmountInCalculated {
-            amount_out,
-            input,
-            output,
-            zero_for_one,
-        });
+        log(
+            self.vm(),
+            AmountInCalculated { amount_out, input, output, zero_for_one },
+        );
 
         Ok(amount_in)
     }
@@ -143,15 +136,14 @@ impl ICurve for UniswapCurve {
         zero_for_one: bool,
     ) -> Result<U256, Error> {
         // Calculate `amount_out` based on swap params.
-        let amount_out = self.calculate_amount_out(amount_in, input, output, zero_for_one)?;
+        let amount_out =
+            self.calculate_amount_out(amount_in, input, output, zero_for_one)?;
 
         // Emit an event if needed.
-        evm::log(AmountOutCalculated {
-            amount_in,
-            input,
-            output,
-            zero_for_one,
-        });
+        log(
+            self.vm(),
+            AmountOutCalculated { amount_in, input, output, zero_for_one },
+        );
 
         Ok(amount_out)
     }
@@ -220,11 +212,15 @@ impl UniswapCurve {
 /// Unit tests
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use alloy_primitives::{address, uint};
+    use alloy_primitives::{address, uint, Address};
+    use motsu::prelude::Contract;
 
-    const CURRENCY_1: Address = address!("A11CEacF9aa32246d767FCCD72e02d6bCbcC375d");
-    const CURRENCY_2: Address = address!("B0B0cB49ec2e96DF5F5fFB081acaE66A2cBBc2e2");
+    use super::*;
+
+    const CURRENCY_1: Address =
+        address!("A11CEacF9aa32246d767FCCD72e02d6bCbcC375d");
+    const CURRENCY_2: Address =
+        address!("B0B0cB49ec2e96DF5F5fFB081acaE66A2cBBc2e2");
 
     #[test]
     fn sample_test() {
@@ -232,41 +228,55 @@ mod tests {
     }
 
     #[motsu::test]
-    fn calculates_amount_in(contract: UniswapCurve) {
+    fn calculates_amount_in(contract: Contract<UniswapCurve>, alice: Address) {
         let amount_out = uint!(1_U256);
         let expected_amount_in = amount_out; // 1:1 swap
         let amount_in = contract
+            .sender(alice)
             .calculate_amount_in(amount_out, CURRENCY_1, CURRENCY_2, true)
             .expect("should calculate `amount_in`");
         assert_eq!(expected_amount_in, amount_in);
     }
 
     #[motsu::test]
-    fn calculates_amount_out(contract: UniswapCurve) {
+    fn calculates_amount_out(contract: Contract<UniswapCurve>, alice: Address) {
         let amount_in = uint!(2_U256);
         let expected_amount_out = amount_in; // 1:1 swap
         let amount_out = contract
+            .sender(alice)
             .calculate_amount_out(amount_in, CURRENCY_1, CURRENCY_2, true)
             .expect("should calculate `amount_out`");
         assert_eq!(expected_amount_out, amount_out);
     }
 
     #[motsu::test]
-    fn returns_amount_in_for_exact_output(contract: UniswapCurve) {
+    fn returns_amount_in_for_exact_output(
+        contract: Contract<UniswapCurve>,
+        alice: Address,
+    ) {
         let amount_out = uint!(1_U256);
         let expected_amount_in = amount_out; // 1:1 swap
         let amount_in = contract
-            .get_amount_in_for_exact_output(amount_out, CURRENCY_1, CURRENCY_2, true)
+            .sender(alice)
+            .get_amount_in_for_exact_output(
+                amount_out, CURRENCY_1, CURRENCY_2, true,
+            )
             .expect("should calculate `amount_in`");
         assert_eq!(expected_amount_in, amount_in);
     }
 
     #[motsu::test]
-    fn returns_amount_out_from_exact_input(contract: UniswapCurve) {
+    fn returns_amount_out_from_exact_input(
+        contract: Contract<UniswapCurve>,
+        alice: Address,
+    ) {
         let amount_in = uint!(2_U256);
         let expected_amount_out = amount_in; // 1:1 swap
         let amount_out = contract
-            .get_amount_out_from_exact_input(amount_in, CURRENCY_1, CURRENCY_2, true)
+            .sender(alice)
+            .get_amount_out_from_exact_input(
+                amount_in, CURRENCY_1, CURRENCY_2, true,
+            )
             .expect("should calculate `amount_out`");
         assert_eq!(expected_amount_out, amount_out);
     }
