@@ -15,6 +15,7 @@ sol! {
     /// Emitted when the amount of input tokens for an exact-output swap
     /// is calculated.
     #[allow(missing_docs)]
+    #[derive(Debug)]
     event AmountInCalculated(
         uint256 amount_out,
         address input,
@@ -25,6 +26,7 @@ sol! {
     /// Emitted when the amount of output tokens for an exact-input swap
     /// is calculated.
     #[allow(missing_docs)]
+    #[derive(Debug)]
     event AmountOutCalculated(
         uint256 amount_in,
         address input,
@@ -256,13 +258,25 @@ mod tests {
     ) {
         let amount_out = uint!(1_U256);
         let expected_amount_in = amount_out; // 1:1 swap
+        let zero_for_one = true;
         let amount_in = contract
             .sender(alice)
             .get_amount_in_for_exact_output(
-                amount_out, CURRENCY_1, CURRENCY_2, true,
+                amount_out,
+                CURRENCY_1,
+                CURRENCY_2,
+                zero_for_one,
             )
             .expect("should calculate `amount_in`");
         assert_eq!(expected_amount_in, amount_in);
+
+        // Assert emitted events.
+        contract.assert_emitted(&AmountInCalculated {
+            amount_out,
+            input: CURRENCY_1,
+            output: CURRENCY_2,
+            zero_for_one,
+        });
     }
 
     #[motsu::test]
@@ -272,12 +286,24 @@ mod tests {
     ) {
         let amount_in = uint!(2_U256);
         let expected_amount_out = amount_in; // 1:1 swap
+        let zero_for_one = true;
         let amount_out = contract
             .sender(alice)
             .get_amount_out_from_exact_input(
-                amount_in, CURRENCY_1, CURRENCY_2, true,
+                amount_in,
+                CURRENCY_1,
+                CURRENCY_2,
+                zero_for_one,
             )
             .expect("should calculate `amount_out`");
         assert_eq!(expected_amount_out, amount_out);
+
+        // Assert emitted events.
+        contract.assert_emitted(&AmountOutCalculated {
+            amount_in,
+            input: CURRENCY_1,
+            output: CURRENCY_2,
+            zero_for_one,
+        });
     }
 }
