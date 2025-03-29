@@ -7,207 +7,264 @@ use alloy_sol_types::sol;
 /// Import items from the SDK. The prelude contains common traits and
 /// macros.
 use stylus_sdk::prelude::*;
+use stylus_sdk::storage::{StorageU256, StorageAddress};
 
 /// The currency data type.
 pub type Currency = Address;
 
 sol! {
-    /// Emitted when the amount of input tokens for an exact-output swap
-    /// is calculated.
-    #[allow(missing_docs)]
-    #[derive(Debug)]
-    event AmountInCalculated(
-        uint256 amount_out,
-        address input,
-        address output,
-        bool zero_for_one
+    /// Emitted when liquidity is moved to lending protocol
+    event LiquidityMovedToLending(
+        address indexed token,
+        uint256 amount,
+        uint256 timestamp
     );
 
-    /// Emitted when the amount of output tokens for an exact-input swap
-    /// is calculated.
-    #[allow(missing_docs)]
-    #[derive(Debug)]
-    event AmountOutCalculated(
-        uint256 amount_in,
-        address input,
-        address output,
-        bool zero_for_one
+    /// Emitted when liquidity is moved back to LP
+    event LiquidityMovedToLP(
+        address indexed token,
+        uint256 amount,
+        uint256 timestamp
+    );
+
+    /// Emitted when lending fees are collected
+    event LendingFeesCollected(
+        address indexed token,
+        uint256 amount,
+        uint256 timestamp
     );
 }
 
 sol! {
-    /// Indicates a custom error.
+    /// Custom errors for the dynamic LP hook
     #[derive(Debug)]
-    #[allow(missing_docs)]
-    error CurveCustomError();
+    error InvalidTWAP();
+    #[derive(Debug)]
+    error InvalidLendingProtocol();
+    #[derive(Debug)]
+    error InvalidAmount();
+    #[derive(Debug)]
+    error InvalidRange();
 }
 
 #[derive(SolidityError, Debug)]
 pub enum Error {
-    /// Indicates a custom error.
-    CustomError(CurveCustomError),
+    InvalidTWAP(InvalidTWAP),
+    InvalidLendingProtocol(InvalidLendingProtocol),
+    InvalidAmount(InvalidAmount),
+    InvalidRange(InvalidRange),
 }
+
+/// Storage for TWAP data
+#[storage]
+struct TWAPStorage {
+    /// The last price observation
+    last_price: StorageU256,
+    /// The last timestamp of price observation
+    last_timestamp: StorageU256,
+    /// The cumulative price
+    cumulative_price: StorageU256,
+    /// The observation period (in seconds)
+    observation_period: StorageU256,
+}
+
+/// Storage for lending protocol data
+#[storage]
+struct LendingStorage {
+    /// The lending protocol address
+    lending_protocol: StorageAddress,
+    /// The amount of tokens currently in lending
+    amount_in_lending: StorageU256,
+    /// The last time fees were collected
+    last_fee_collection: StorageU256,
+}
+
+/// Main hook storage
 #[storage]
 #[entrypoint]
-struct UniswapCurve {}
-
-/// Interface of an [`UniswapCurve`] contract.
-///
-/// NOTE: The contract's interface can be modified in any way.
-pub trait ICurve {
-    /// Returns the amount of input tokens for an exact-output swap.
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - Write access to the contract's state.
-    /// * `amount_out` the amount of output tokens the user expects to receive.
-    /// * `input` - The input token.
-    /// * `output` - The output token.
-    /// * `zero_for_one` - True if the input token is token0.
-    ///
-    /// # Errors
-    ///
-    /// May return an [`Error`].
-    ///
-    /// # Events
-    ///
-    /// May emit any event.
-    fn get_amount_in_for_exact_output(
-        &mut self,
-        amount_out: U256,
-        input: Currency,
-        output: Currency,
-        zero_for_one: bool,
-    ) -> Result<U256, Error>;
-
-    /// Returns the amount of output tokens for an exact-input swap.
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - Write access to the contract's state.
-    /// * `amount_in` - The amount of input tokens.
-    /// * `input` - The input token.
-    /// * `output` - The output token.
-    /// * `zero_for_one` - True if the input token is `token_0`.
-    ///
-    /// # Errors
-    ///
-    /// May return an [`Error`].
-    ///
-    /// # Events
-    ///
-    /// May emit any event.
-    fn get_amount_out_from_exact_input(
-        &mut self,
-        amount_in: U256,
-        input: Currency,
-        output: Currency,
-        zero_for_one: bool,
-    ) -> Result<U256, Error>;
+struct DynamicLPHook {
+    /// TWAP storage
+    twap: TWAPStorage,
+    /// Lending storage
+    lending: LendingStorage,
+    /// The minimum time between reallocations (in seconds)
+    min_reallocation_time: StorageU256,
+    /// The price range for active LP position (in basis points, 1% = 100)
+    price_range: StorageU256,
 }
 
-/// Declare that [`UniswapCurve`] is a contract
-/// with the following external methods.
+/// Interface for the dynamic LP hook
+pub trait IDynamicLPHook {
+    /// Initialize the hook with parameters
+    fn initialize(
+        &mut self,
+        lending_protocol: Address,
+        observation_period: U256,
+        min_reallocation_time: U256,
+        price_range: U256,
+    ) -> Result<(), Error>;
+
+    /// Update TWAP with new price
+    fn update_twap(&mut self, price: U256) -> Result<(), Error>;
+
+    /// Check if position is out of range and reallocate if necessary
+    fn check_and_reallocate(&mut self, current_price: U256) -> Result<(), Error>;
+
+    /// Collect lending fees
+    fn collect_lending_fees(&mut self) -> Result<U256, Error>;
+
+    /// Move liquidity back to LP if price is in range
+    fn move_to_lp_if_in_range(&mut self, current_price: U256) -> Result<(), Error>;
+}
+
 #[public]
-impl ICurve for UniswapCurve {
-    fn get_amount_in_for_exact_output(
+impl IDynamicLPHook for DynamicLPHook {
+    fn initialize(
         &mut self,
-        amount_out: U256,
-        input: Currency,
-        output: Currency,
-        zero_for_one: bool,
-    ) -> Result<U256, Error> {
-        // Calculate `amount_in` based on swap params.
-        let amount_in =
-            self.calculate_amount_in(amount_out, input, output, zero_for_one)?;
-
-        // Emit an event if needed.
-        log(
-            self.vm(),
-            AmountInCalculated { amount_out, input, output, zero_for_one },
-        );
-
-        Ok(amount_in)
+        lending_protocol: Address,
+        observation_period: U256,
+        min_reallocation_time: U256,
+        price_range: U256,
+    ) -> Result<(), Error> {
+        self.lending.lending_protocol.set(lending_protocol);
+        self.twap.observation_period.set(observation_period);
+        self.min_reallocation_time.set(min_reallocation_time);
+        self.price_range.set(price_range);
+        Ok(())
     }
 
-    fn get_amount_out_from_exact_input(
-        &mut self,
-        amount_in: U256,
-        input: Currency,
-        output: Currency,
-        zero_for_one: bool,
-    ) -> Result<U256, Error> {
-        // Calculate `amount_out` based on swap params.
-        let amount_out =
-            self.calculate_amount_out(amount_in, input, output, zero_for_one)?;
+    fn update_twap(&mut self, price: U256) -> Result<(), Error> {
+        let current_time = U256::from(self.vm().block_timestamp());
+        let time_diff = current_time - self.twap.last_timestamp.get();
+        
+        if time_diff == U256::ZERO {
+            return Err(Error::InvalidTWAP(InvalidTWAP {}));
+        }
 
-        // Emit an event if needed.
+        // Update cumulative price
+        self.twap.cumulative_price.set(
+            self.twap.cumulative_price.get() + (price * time_diff)
+        );
+        
+        // Update last price and timestamp
+        self.twap.last_price.set(price);
+        self.twap.last_timestamp.set(current_time);
+
+        Ok(())
+    }
+
+    fn check_and_reallocate(&mut self, current_price: U256) -> Result<(), Error> {
+        let current_time = U256::from(self.vm().block_timestamp());
+        let time_since_last_reallocation = current_time - self.lending.last_fee_collection.get();
+
+        if time_since_last_reallocation < self.min_reallocation_time.get() {
+            return Ok(());
+        }
+
+        // Calculate TWAP
+        let twap = self.twap.cumulative_price.get() / self.twap.observation_period.get();
+        
+        // Check if price is out of range (using basis points)
+        let price_diff = if current_price > twap {
+            current_price - twap
+        } else {
+            twap - current_price
+        };
+
+        let price_diff_bps = (price_diff * U256::from(10000)) / twap;
+
+        if price_diff_bps > self.price_range.get() {
+            // Move to lending protocol
+            self.move_to_lending()?;
+        }
+
+        Ok(())
+    }
+
+    fn collect_lending_fees(&mut self) -> Result<U256, Error> {
+        // This is a placeholder for actual lending protocol integration
+        // In a real implementation, this would call the lending protocol's collect function
+        let fees = U256::from(0);
+        
+        self.lending.last_fee_collection.set(U256::from(self.vm().block_timestamp()));
+        
         log(
             self.vm(),
-            AmountOutCalculated { amount_in, input, output, zero_for_one },
+            LendingFeesCollected {
+                token: self.vm().contract_address(),
+                amount: fees,
+                timestamp: U256::from(self.vm().block_timestamp()),
+            },
         );
 
-        Ok(amount_out)
+        Ok(fees)
+    }
+
+    fn move_to_lp_if_in_range(&mut self, current_price: U256) -> Result<(), Error> {
+        let twap = self.twap.cumulative_price.get() / self.twap.observation_period.get();
+        
+        // Check if price is in range (using basis points)
+        let price_diff = if current_price > twap {
+            current_price - twap
+        } else {
+            twap - current_price
+        };
+
+        let price_diff_bps = (price_diff * U256::from(10000)) / twap;
+
+        if price_diff_bps <= self.price_range.get() && self.lending.amount_in_lending.get() > U256::ZERO {
+            // Move back to LP
+            self.move_to_lp()?;
+        }
+
+        Ok(())
     }
 }
 
-impl UniswapCurve {
-    /// Calculates the amount of input tokens for an exact-output swap.
-    ///
-    /// # Arguments
-    ///
-    /// * `&self` - Read access to the contract's state.
-    /// * `amount_out` the amount of output tokens the user expects to receive.
-    /// * `input` - The input token.
-    /// * `output` - The output token.
-    /// * `zero_for_one` - True if the input token is token0.
-    ///
-    /// # Errors
-    ///
-    /// May return an [`Error`].
-    fn calculate_amount_in(
-        &self,
-        amount_out: U256,
-        _input: Currency,
-        _output: Currency,
-        _zero_for_one: bool,
-    ) -> Result<U256, Error> {
-        // This is an example of a constant-sum swap curve,
-        // tokens are traded exactly 1:1.
-        //
-        // You can implement any swap curve.
-        let amount_in = amount_out;
+impl DynamicLPHook {
+    /// Move liquidity to lending protocol
+    fn move_to_lending(&mut self) -> Result<(), Error> {
+        // This is a placeholder for actual lending protocol integration
+        // In a real implementation, this would:
+        // 1. Get the current LP position
+        // 2. Approve the lending protocol
+        // 3. Deposit into the lending protocol
+        let amount = U256::from(1000); // Placeholder amount
+        
+        self.lending.amount_in_lending.set(amount);
+        
+        log(
+            self.vm(),
+            LiquidityMovedToLending {
+                token: self.vm().contract_address(),
+                amount,
+                timestamp: U256::from(self.vm().block_timestamp()),
+            },
+        );
 
-        Ok(amount_in)
+        Ok(())
     }
 
-    /// Returns the amount of output tokens for an exact-input swap.
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - Write access to the contract's state.
-    /// * `amount_in` - The amount of input tokens.
-    /// * `input` - The input token.
-    /// * `output` - The output token.
-    /// * `zero_for_one` - True if the input token is `token_0`.
-    ///
-    /// # Errors
-    ///
-    /// May return an [`Error`].
-    fn calculate_amount_out(
-        &self,
-        amount_in: U256,
-        _input: Currency,
-        _output: Currency,
-        _zero_for_one: bool,
-    ) -> Result<U256, Error> {
-        // This is an example of a constant-sum swap curve,
-        // tokens are traded exactly 1:1.
-        //
-        // You can implement any swap curve.
-        let amount_out = amount_in;
+    /// Move liquidity back to LP
+    fn move_to_lp(&mut self) -> Result<(), Error> {
+        // This is a placeholder for actual lending protocol integration
+        // In a real implementation, this would:
+        // 1. Withdraw from lending protocol
+        // 2. Add liquidity back to LP
+        let amount = self.lending.amount_in_lending.get();
+        
+        self.lending.amount_in_lending.set(U256::ZERO);
+        
+        log(
+            self.vm(),
+            LiquidityMovedToLP {
+                token: self.vm().contract_address(),
+                amount,
+                timestamp: U256::from(self.vm().block_timestamp()),
+            },
+        );
 
-        Ok(amount_out)
+        Ok(())
     }
 }
 
@@ -219,91 +276,38 @@ mod tests {
 
     use super::*;
 
-    const CURRENCY_1: Address =
-        address!("A11CEacF9aa32246d767FCCD72e02d6bCbcC375d");
-    const CURRENCY_2: Address =
-        address!("B0B0cB49ec2e96DF5F5fFB081acaE66A2cBBc2e2");
+    const LENDING_PROTOCOL: Address = address!("A11CEacF9aa32246d767FCCD72e02d6bCbcC375d");
+    const TOKEN: Address = address!("B0B0cB49ec2e96DF5F5fFB081acaE66A2cBBc2e2");
 
-    #[test]
-    fn sample_test() {
-        assert_eq!(4, 2 + 2);
+    #[motsu::test]
+    fn initializes_hook(contract: Contract<DynamicLPHook>, alice: Address) {
+        let observation_period = uint!(3600_U256); // 1 hour
+        let min_reallocation_time = uint!(300_U256); // 5 minutes
+        let price_range = uint!(500_U256); // 5% in basis points
+
+        contract
+            .sender(alice)
+            .initialize(LENDING_PROTOCOL, observation_period, min_reallocation_time, price_range)
+            .expect("should initialize hook");
     }
 
     #[motsu::test]
-    fn calculates_amount_in(contract: Contract<UniswapCurve>, alice: Address) {
-        let amount_out = uint!(1_U256);
-        let expected_amount_in = amount_out; // 1:1 swap
-        let amount_in = contract
+    fn updates_twap(contract: Contract<DynamicLPHook>, alice: Address) {
+        let price = uint!(1000_U256);
+        
+        contract
             .sender(alice)
-            .calculate_amount_in(amount_out, CURRENCY_1, CURRENCY_2, true)
-            .expect("should calculate `amount_in`");
-        assert_eq!(expected_amount_in, amount_in);
+            .update_twap(price)
+            .expect("should update TWAP");
     }
 
     #[motsu::test]
-    fn calculates_amount_out(contract: Contract<UniswapCurve>, alice: Address) {
-        let amount_in = uint!(2_U256);
-        let expected_amount_out = amount_in; // 1:1 swap
-        let amount_out = contract
+    fn checks_and_reallocates(contract: Contract<DynamicLPHook>, alice: Address) {
+        let current_price = uint!(1100_U256); // 10% above TWAP
+        
+        contract
             .sender(alice)
-            .calculate_amount_out(amount_in, CURRENCY_1, CURRENCY_2, true)
-            .expect("should calculate `amount_out`");
-        assert_eq!(expected_amount_out, amount_out);
-    }
-
-    #[motsu::test]
-    fn returns_amount_in_for_exact_output(
-        contract: Contract<UniswapCurve>,
-        alice: Address,
-    ) {
-        let amount_out = uint!(1_U256);
-        let expected_amount_in = amount_out; // 1:1 swap
-        let zero_for_one = true;
-        let amount_in = contract
-            .sender(alice)
-            .get_amount_in_for_exact_output(
-                amount_out,
-                CURRENCY_1,
-                CURRENCY_2,
-                zero_for_one,
-            )
-            .expect("should calculate `amount_in`");
-        assert_eq!(expected_amount_in, amount_in);
-
-        // Assert emitted events.
-        contract.assert_emitted(&AmountInCalculated {
-            amount_out,
-            input: CURRENCY_1,
-            output: CURRENCY_2,
-            zero_for_one,
-        });
-    }
-
-    #[motsu::test]
-    fn returns_amount_out_from_exact_input(
-        contract: Contract<UniswapCurve>,
-        alice: Address,
-    ) {
-        let amount_in = uint!(2_U256);
-        let expected_amount_out = amount_in; // 1:1 swap
-        let zero_for_one = true;
-        let amount_out = contract
-            .sender(alice)
-            .get_amount_out_from_exact_input(
-                amount_in,
-                CURRENCY_1,
-                CURRENCY_2,
-                zero_for_one,
-            )
-            .expect("should calculate `amount_out`");
-        assert_eq!(expected_amount_out, amount_out);
-
-        // Assert emitted events.
-        contract.assert_emitted(&AmountOutCalculated {
-            amount_in,
-            input: CURRENCY_1,
-            output: CURRENCY_2,
-            zero_for_one,
-        });
+            .check_and_reallocate(current_price)
+            .expect("should check and reallocate");
     }
 }

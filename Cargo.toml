@@ -1,5 +1,5 @@
 [package]
-name = "uniswap-curve"
+name = "dynamic-lp-hook"
 version = "0.2.0"
 edition = "2021"
 

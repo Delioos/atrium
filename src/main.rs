@@ -2,5 +2,5 @@
 
 #[cfg(feature = "export-abi")]
 fn main() {
-    uniswap_curve::print_abi("MIT", "pragma solidity ^0.8.23;");
+    dynamic_lp_hook::print_abi("MIT", "pragma solidity ^0.8.23;");
 }
