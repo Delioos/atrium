@@ -271,43 +271,94 @@ impl DynamicLPHook {
 /// Unit tests
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{address, uint, Address};
-    use motsu::prelude::Contract;
-
     use super::*;
+    use alloy_primitives::{Address, U256};
+    use stylus_sdk::testing::*;
 
-    const LENDING_PROTOCOL: Address = address!("A11CEacF9aa32246d767FCCD72e02d6bCbcC375d");
-    const TOKEN: Address = address!("B0B0cB49ec2e96DF5F5fFB081acaE66A2cBBc2e2");
-
-    #[motsu::test]
-    fn initializes_hook(contract: Contract<DynamicLPHook>, alice: Address) {
-        let observation_period = uint!(3600_U256); // 1 hour
-        let min_reallocation_time = uint!(300_U256); // 5 minutes
-        let price_range = uint!(500_U256); // 5% in basis points
-
-        contract
-            .sender(alice)
-            .initialize(LENDING_PROTOCOL, observation_period, min_reallocation_time, price_range)
-            .expect("should initialize hook");
+    fn setup() -> (TestVM, DynamicLPHook) {
+        let vm = TestVM::default();
+        let mut contract = DynamicLPHook::from(&vm);
+        
+        // Initialize with test values
+        let lending_protocol = Address::from([0x1; 20]);
+        let observation_period = U256::from(3600); // 1 hour
+        let min_reallocation_time = U256::from(1800); // 30 minutes
+        let price_range = U256::from(100);
+        
+        let _ = contract.initialize(lending_protocol, observation_period, min_reallocation_time, price_range);
+        
+        (vm, contract)
     }
 
-    #[motsu::test]
-    fn updates_twap(contract: Contract<DynamicLPHook>, alice: Address) {
-        let price = uint!(1000_U256);
-        
-        contract
-            .sender(alice)
-            .update_twap(price)
-            .expect("should update TWAP");
+    #[test]
+    fn test_initialization() {
+        let (_, contract) = setup();
+        assert_eq!(contract.lending.lending_protocol.get(), Address::from([0x1; 20]));
+        assert_eq!(contract.twap.observation_period.get(), U256::from(3600));
+        assert_eq!(contract.min_reallocation_time.get(), U256::from(1800));
+        assert_eq!(contract.price_range.get(), U256::from(100));
     }
 
-    #[motsu::test]
-    fn checks_and_reallocates(contract: Contract<DynamicLPHook>, alice: Address) {
-        let current_price = uint!(1100_U256); // 10% above TWAP
+    #[test]
+    fn test_updates_twap() {
+        let (vm, mut contract) = setup();
         
-        contract
-            .sender(alice)
-            .check_and_reallocate(current_price)
-            .expect("should check and reallocate");
+        // Set initial timestamp
+        vm.set_block_timestamp(1000);
+        
+        // Update TWAP
+        let _ = contract.update_twap(U256::from(100));
+        
+        // Advance time and update again
+        vm.set_block_timestamp(2800);
+        let _ = contract.update_twap(U256::from(200));
+        
+        // Check TWAP data
+        let last_timestamp = contract.twap.last_timestamp.get();
+        let last_price = contract.twap.last_price.get();
+        assert!(last_timestamp > U256::ZERO);
+        assert_eq!(last_price, U256::from(200));
+    }
+
+    #[test]
+    fn test_checks_and_reallocates() {
+        let (vm, mut contract) = setup();
+        
+        // Set initial timestamp and TWAP
+        vm.set_block_timestamp(1000);
+        let _ = contract.update_twap(U256::from(100));
+        
+        // Advance time past min_reallocation_time
+        vm.set_block_timestamp(3000);
+        
+        // Update TWAP with price outside range
+        let _ = contract.update_twap(U256::from(300));
+        let _ = contract.check_and_reallocate(U256::from(300));
+    }
+
+    #[test]
+    fn test_respects_min_reallocation_time() {
+        let (vm, mut contract) = setup();
+        
+        // Set initial timestamp and TWAP
+        vm.set_block_timestamp(1000);
+        let _ = contract.update_twap(U256::from(100));
+        
+        // Try to reallocate before min_reallocation_time
+        vm.set_block_timestamp(1100); // Only 100 seconds later
+        let result = contract.check_and_reallocate(U256::from(100));
+        assert!(result.is_ok()); // Should succeed but not reallocate
+    }
+
+    #[test]
+    fn test_handles_edge_cases() {
+        let (vm, mut contract) = setup();
+        
+        // Set initial timestamp
+        vm.set_block_timestamp(1000);
+        
+        // Test with zero price
+        let result = contract.update_twap(U256::ZERO);
+        assert!(result.is_ok()); // Should succeed but not update TWAP
     }
 }

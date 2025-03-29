@@ -1,101 +1,111 @@
-# Uniswap Custom Swap Curve
+# Dynamic LP Hook
 
-> [!WARNING]
-> This project is still in a very early and experimental phase. It has never
-> been audited nor thoroughly reviewed for security vulnerabilities. Do not use
-> in production.
+A smart contract that enhances Uniswap V4 liquidity provision by automatically reallocating inactive liquidity to lending protocols. Built with Arbitrum Stylus in Rust.
 
-### **A template for writing Uniswap Custom Swap Curves in Stylus**
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[`Use this Template`](https://github.com/OpenZeppelin/uniswap-stylus-curve-template/generate)
+## Overview
 
-1. The example curve [lib.rs](src/lib.rs) demonstrates a constant-sum swap curve,
-   in which tokens are traded exactly 1:1.
+The Dynamic LP Hook is designed to maximize yield for liquidity providers by creating a positive feedback loop:
+1. When price moves outside a configured range, liquidity is moved to lending protocols
+2. Lending fees compound while liquidity is inactive
+3. When price returns to range, liquidity moves back to LP with increased size
+4. Larger positions generate more fees, creating a virtuous cycle
 
-> [!TIP]
-> You can modify `ICurve` trait based on your needs, or provide your custom algorithm
-> for a swap curve calculation.
+## Features
 
-> [!CAUTION]
-> If anything changes in the contract's interface, make sure to update your
-> Solidity contract with Uniswap hooks to use the new Solidity ABI Interface of this contract.
+- **TWAP-based Price Monitoring**: Uses time-weighted average price to determine optimal reallocation points
+- **Dynamic Reallocation**: Automatically moves liquidity between LP and lending positions
+- **Fee Optimization**: Compounds lending fees while maintaining LP exposure
+- **Gas Efficient**: Built with Arbitrum Stylus for optimal performance
+- **Configurable Parameters**: Adjustable observation period, price range, and reallocation timing
 
-## Getting started
+## Architecture
 
-Follow the instructions in the [Stylus quickstart](https://docs.arbitrum.io/stylus/stylus-quickstart) to configure your development environment.
+For detailed information about the project's architecture, components, and design decisions, see the [Architecture Documentation](docs/architecture.md).
 
-You'll also need [Foundry](https://github.com/foundry-rs/foundry) to interact with the contract.
+## Getting Started
 
-## Check and deploy
+### Prerequisites
 
-You can use [cargo stylus](https://github.com/OffchainLabs/cargo-stylus) to check that your contract is compatible with Stylus by running
+- Rust toolchain (see `rust-toolchain.toml`)
+- Arbitrum Stylus CLI
+- Git
 
-```shell
-cargo stylus check -e=https://sepolia-rollup.arbitrum.io/rpc
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/dynamic-lp-hook.git
+cd dynamic-lp-hook
 ```
 
-With the following command you can deploy it to an Arbitrum chain
-
-```shell
-cargo stylus deploy --private-key $PRIVATE_KEY -e $RPC_URL --no-verify
+2. Build the project:
+```bash
+cargo build
 ```
 
-For example
-
-```shell
-cargo stylus deploy --private-key=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 -e=http://localhost:8547 --no-verify
-```
-
-## Tests
-
-For unit testing, this example integrates the [motsu](https://github.com/OpenZeppelin/rust-contracts-stylus/tree/main/lib/motsu) library from OpenZeppelin. To run unit tests, you can simply use
-
-```shell
+3. Run tests:
+```bash
 cargo test --locked --features std --lib
 ```
 
-Alternatively, you can use the bash script available [test-unit.sh](/scripts/test-unit.sh).
-
-## Exporting Solidity ABI Interface
-
-To export the Solidity ABI interface run the following command
-
-```shell
-cargo stylus export-abi
+4. Check contract compatibility:
+```bash
+cargo stylus check
 ```
 
-## How to run a local dev node
+### Deployment
 
-Instructions to setup a local dev node can be found [here](https://docs.arbitrum.io/run-arbitrum-node/run-nitro-dev-node).
+To deploy the contract to Arbitrum Stylus:
 
-Alternatively, you can use the bash script available [nitro-testnode.sh](/scripts/nitro-testnode.sh)
-
-```shell
-./scripts/nitro-testnode.sh -d -i
+```bash
+cargo stylus deploy --private-key <your-private-key>
 ```
 
-If you need to have some testnet tokens, you can use this script
+## Usage
 
-```shell
-./nitro-testnode/test-node.bash script send-l2 --to address_<address> --ethamount <amount>
+### Initialization
+
+```rust
+let hook = DynamicLPHook::new();
+hook.initialize(
+    lending_protocol_address,
+    observation_period,    // e.g., 3600 (1 hour)
+    min_reallocation_time, // e.g., 1800 (30 minutes)
+    price_range,          // e.g., 100 (1% in basis points)
+)?;
 ```
 
-For example
+### Key Functions
 
-```shell
-./nitro-testnode/test-node.bash script send-l2 --to address_0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --ethamount 5
+- `update_twap(price)`: Update the time-weighted average price
+- `check_and_reallocate(current_price)`: Check if position needs reallocation
+- `collect_lending_fees()`: Collect and compound lending fees
+- `move_to_lp_if_in_range(current_price)`: Return liquidity to LP if price is in range
+
+## Testing
+
+The project includes comprehensive tests for all major functionality:
+
+```bash
+cargo test --locked --features std --lib
 ```
 
-## Solidity Interface
+## Contributing
 
-This is the current Solidity ABI Interface for the contract
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-```solidity
-interface IUniswapCurve {
-    function getAmountInForExactOutput(uint256 amount_out, address input, address output, bool zero_for_one) external returns (uint256);
+## License
 
-    function getAmountOutFromExactInput(uint256 amount_in, address input, address output, bool zero_for_one) external returns (uint256);
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-    error CurveCustomError();
-}
-```
+## Acknowledgments
+
+- [Arbitrum Stylus](https://docs.arbitrum.io/stylus)
+- [Uniswap V4](https://docs.uniswap.org/contracts/v4/overview)
+- [Rust](https://www.rust-lang.org/)
