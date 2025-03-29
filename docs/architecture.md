@@ -54,6 +54,25 @@ The lending integration:
 - Tracks lending positions and fees
 - Implements fee collection and compounding
 
+### 4. LP Auto-Compound System
+```mermaid
+graph LR
+    A[LP Position] -->|Generate| B[LP Fees]
+    B -->|Accumulate| C[Fee Pool]
+    C -->|Check| D{Threshold Met?}
+    D -->|Yes| E[Auto-Compound]
+    E -->|Reinvest| A
+    D -->|No| F[Wait]
+    F -->|Accumulate| C
+```
+
+The LP auto-compound system:
+- Collects fees from LP positions
+- Accumulates fees until threshold is met
+- Automatically reinvests fees back into LP position
+- Configurable minimum compound amount
+- Can be enabled/disabled by users
+
 ## Positive Feedback Loop
 
 ```mermaid
@@ -63,6 +82,8 @@ graph TD
     C -->|Compound| B
     B -->|Price Back in Range| D[Return to LP]
     D -->|Higher Liquidity| A
+    A -->|Generate| E[LP Fees]
+    E -->|Auto-Compound| A
 ```
 
 The system creates a positive feedback loop where:
@@ -70,7 +91,8 @@ The system creates a positive feedback loop where:
 2. Fees compound in the lending protocol
 3. When returning to LP, the position is larger
 4. Larger positions generate more fees
-5. Cycle continues
+5. LP fees auto-compound back into the position
+6. Cycle continues
 
 ## Key Parameters
 
@@ -78,6 +100,8 @@ The system creates a positive feedback loop where:
 - **Price Range**: Acceptable deviation from TWAP (in basis points)
 - **Min Reallocation Time**: Minimum time between position changes
 - **Lending Protocol**: Address of the integrated lending protocol
+- **Auto-Compound Enabled**: Whether LP fees auto-compound
+- **Min Compound Amount**: Minimum fees required to trigger auto-compound
 
 ## Security Considerations
 
